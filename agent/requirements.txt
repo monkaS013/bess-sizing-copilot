@@ -1,0 +1,7 @@
+# Dependencias do agente single (Sprint 2)
+anthropic>=0.40.0
+streamlit>=1.36
+python-dotenv>=1.0
+plotly>=5.20
+
+# bess-core eh importado por path relativo (sem instalar como pacote por enquanto).
