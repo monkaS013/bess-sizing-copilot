@@ -4,6 +4,72 @@ Todas as mudanças notáveis deste projeto serão documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.6.0] — 2026-04-25
+
+Sprint 3 — produto completo end-to-end. Single agent com tool-use, backend FastAPI, frontend Next.js e persistência Supabase opcional.
+
+### Adicionado
+
+#### Sprint 2 — Single agent (Claude SDK + tool-use)
+
+- `agent/tools.py` — 8 wrappers JSON expondo todo o `bess-core` ao Claude. Cache de perfis em memória para evitar inflar contexto. Output do despacho sumarizado (não envia array 8760h ao LLM).
+- `agent/agent_v1.py` — loop tool-use com Anthropic SDK. Max 12 iterações safety net. Persistência por sessão.
+- `agent/perfis.py` — geradores sintéticos de perfil de carga (industrial semanal, comercial, FV).
+- `agent/prompts.py` — system prompt PT-BR v0.5.1 com:
+  - Decomposição de economia em 3 componentes (demanda + multa de ultrapassagem 2× + tarifa de energia deslocada).
+  - Revenue stacking obrigatório em projetos inviáveis.
+  - Resumo + confirmação antes da cadeia de tool calls.
+  - Conta de luz como input ideal no discovery.
+- `agent/streamlit_app.py` — UI dev com chat e expanders por tool call.
+
+#### Sprint 3 Fase A — Backend FastAPI
+
+- `agent/api_server.py` — 5 endpoints REST (`/api/health`, `/api/sessions`, `/api/chat`, `/api/sessions/{id}/historico`, `/api/sessions/{id}` DELETE) + Swagger auto-gerado em `/docs`.
+- Sessões isoladas por instância de `Agent` em RAM (cache).
+- CORS pré-configurado para Next.js (`:3000`) e Streamlit (`:8501`).
+- Validação Pydantic automática em request bodies.
+
+#### Sprint 3 Fase B — Frontend Next.js
+
+- `frontend/` — Next.js 14 (App Router) + TypeScript + Tailwind + react-markdown + lucide-react.
+- Chat UI com sidebar de status, expanders de tool calls (input/output JSON), markdown rendering, auto-scroll, auto-resize do textarea.
+- API routes `/api/chat`, `/api/sessions`, `/api/health` como proxy server-side para FastAPI (esconde URL do backend).
+- localStorage para persistir `session_id` entre reloads.
+- Auto-recovery em sessão expirada: detecta erro 404, recria sessão silenciosamente, re-envia mensagem.
+
+#### Sprint 3 Fase C — Persistência Supabase (opcional)
+
+- `agent/storage.py` — interface `Storage` abstrata com 2 backends:
+  - `InMemoryStorage` (default, retrocompatível).
+  - `SupabaseStorage` (ativado por env vars `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`).
+- `supabase/migrations/0001_init.sql` — schema idempotente com 3 tabelas (`sessoes_bess`, `mensagens`, `agente_logs`), índices, triggers de `atualizado_em`, RLS habilitada.
+- `frontend/src/lib/supabase.ts` — client TS com `ensureUserId()` (auth anônimo Supabase OU UUID local) e graceful fallback.
+- `docs/SETUP_SUPABASE.md` — passo-a-passo de criação de conta, projeto, migration SQL, env vars (10-15 min).
+
+### Decisões de design
+
+- **`postgrest>=0.16` em vez de `supabase>=2.7` umbrella**: o pacote completo puxa `storage3` → `pyiceberg` que tem extensão C exigindo MSVC no Windows. Como só usamos PostgREST para CRUD, eliminamos 5 dependências problemáticas.
+- **Backend FastAPI separado em vez de Next.js puro**: mantém `bess-core` Python intacto, evita reescrita em TS, alinha com briefing original (Vercel + Railway).
+- **Anonymous auth Supabase + `auth.uid()` por usuário**: zero fricção pro primeiro uso, sem login obrigatório, mantém RLS funcional.
+- **Tool calls como JSONB em `mensagens` + replicadas em `agente_logs`**: visualização inline + analytics agregada.
+- **`signInAnonymously` opcional**: se Supabase não configurado, frontend usa UUID local (`crypto.randomUUID`). Backend continua em InMemory. **Sistema funciona sem Supabase**.
+- **Auto-recovery de sessão expirada no frontend**: usuário não percebe quando o backend reinicia (tipico em dev).
+
+### Observações operacionais
+
+- Stack rodando local em 2 terminais: `uvicorn api_server:app --port 8000` (backend) + `npm run dev` (frontend, `:3000`).
+- Streamlit (`agent/streamlit_app.py`) continua disponível como alternativa de UI dev.
+- Validado: pipeline end-to-end com Claude Sonnet 4.5, agente respondendo coerente, tool calls executando bess-core, frontend renderizando markdown e expanders.
+
+### Limitações conhecidas (saída para versões futuras)
+
+- **Sem JWT validation no backend** — backend confia em `X-User-Id` do header. Aceitável em dev, precisa de validação proper para produção pública.
+- **Sem streaming SSE** — respostas chegam de uma vez, sem token-by-token.
+- **Sem dark mode toggle** — CSS suporta `.dark`, mas falta o botão.
+- **Sem Monte Carlo financeiro** — sensibilidade ±20% ainda é a única análise probabilística.
+
+[0.6.0]: # "single agent + frontend + supabase opcional"
+
 ## [1.0.0] — 2026-04-24
 
 Primeira versão estável: núcleo determinístico do BESS Sizing Copilot completo.

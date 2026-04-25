@@ -1,0 +1,30 @@
+# deps
+node_modules/
+.pnp
+.pnp.*
+
+# next
+.next/
+out/
+.turbo/
+
+# build
+build/
+dist/
+
+# env
+.env*.local
+
+# logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts

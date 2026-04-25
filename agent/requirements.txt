@@ -1,7 +1,19 @@
-# Dependencias do agente single (Sprint 2)
+# Dependencias do agente single (Sprint 2 + Sprint 3)
 anthropic>=0.40.0
 streamlit>=1.36
-python-dotenv>=1.0
 plotly>=5.20
+python-dotenv>=1.0
+
+# Sprint 3 - FastAPI backend (Fase A)
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pydantic>=2.5
+
+# Sprint 3 - Persistencia Supabase (Fase C)
+# Usamos postgrest (sub-pacote leve do supabase) direto, em vez do umbrella
+# 'supabase>=2.7'. Razao: o umbrella puxa storage3 -> pyiceberg, que tem
+# extensao C que exige MSVC para buildar no Windows com Python 3.14.
+# postgrest cobre tudo que precisamos para CRUD em tabelas Postgres.
+postgrest>=0.16
 
 # bess-core eh importado por path relativo (sem instalar como pacote por enquanto).

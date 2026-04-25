@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --border: 214 32% 91%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 210 40% 96%;
+    --destructive: 0 84% 60%;
+  }
+
+  .dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --border: 217 33% 17%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 11%;
+    --accent: 217 33% 17%;
+    --destructive: 0 63% 31%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Markdown styling para resposta do assistant */
+.prose-bess {
+  @apply text-sm leading-relaxed;
+}
+
+.prose-bess h1, .prose-bess h2, .prose-bess h3 {
+  @apply font-semibold mt-4 mb-2;
+}
+
+.prose-bess h1 { @apply text-lg; }
+.prose-bess h2 { @apply text-base; }
+.prose-bess h3 { @apply text-sm; }
+
+.prose-bess p {
+  @apply my-2;
+}
+
+.prose-bess strong {
+  @apply font-semibold;
+}
+
+.prose-bess code {
+  @apply bg-muted px-1 py-0.5 rounded text-xs font-mono;
+}
+
+.prose-bess pre {
+  @apply bg-muted p-3 rounded-md overflow-x-auto my-2;
+}
+
+.prose-bess pre code {
+  @apply bg-transparent p-0;
+}
+
+.prose-bess ul, .prose-bess ol {
+  @apply my-2 ml-5;
+}
+
+.prose-bess ul { @apply list-disc; }
+.prose-bess ol { @apply list-decimal; }
+
+.prose-bess li {
+  @apply my-1;
+}
+
+.prose-bess table {
+  @apply border-collapse w-full my-2 text-xs;
+}
+
+.prose-bess th, .prose-bess td {
+  @apply border border-border px-2 py-1 text-left;
+}
+
+.prose-bess th {
+  @apply bg-muted font-semibold;
+}
