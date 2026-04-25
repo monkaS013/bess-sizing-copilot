@@ -23,4 +23,11 @@ postgrest>=0.16
 reportlab>=4.0
 markdown-it-py>=3.0
 
+# Sprint 4 Fase B - RAG da base regulatoria via BM25
+# rank_bm25: BM25 Okapi puro Python (zero deps). Lightweight (~50 KB).
+# pypdf: extracao de texto de PDFs oficiais ANEEL/Planalto. Ja vinha
+# implicitamente via reportlab mas declaramos explicitamente.
+rank_bm25>=0.2.2
+pypdf>=4.0
+
 # bess-core eh importado por path relativo (sem instalar como pacote por enquanto).

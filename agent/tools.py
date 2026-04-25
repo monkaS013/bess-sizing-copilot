@@ -34,6 +34,7 @@ from bess_core import (
     dimensionar_arbitragem,
     dimensionar_backup,
     dimensionar_peak_shaving,
+    simulacao_monte_carlo,
     simular_despacho_horario,
 )
 from perfis import (
@@ -456,6 +457,163 @@ def exec_match_sku_huawei(args: dict) -> dict:
 
 
 # ===========================================================================
+# Tool 9: monte_carlo_financeiro (Sprint 4-C)
+# ===========================================================================
+
+DEF_MONTE_CARLO_FINANCEIRO = {
+    "name": "monte_carlo_financeiro",
+    "description": (
+        "Simulacao Monte Carlo do VPL (10.000 iteracoes default) para analise "
+        "probabilistica do projeto. Substitui o tornado +-20% por uma analise "
+        "robusta com distribuicoes triangulares (CAPEX/OPEX/Economia) e normal "
+        "truncada (WACC). Devolve P10/P50/P90 do VPL e P(VPL > 0). "
+        "USE quando o tornado de analisar_financeiro indicar incerteza alta "
+        "(VPL central proximo de zero) OU quando o usuario explicitamente "
+        "pedir analise de risco probabilistica."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "capex_brl": {"type": "number"},
+            "opex_anual_brl": {"type": "number"},
+            "economia_anual_brl": {"type": "number"},
+            "horizonte_anos": {"type": "integer", "default": 20},
+            "wacc_central": {"type": "number", "default": 0.12},
+            "wacc_desvio_padrao": {
+                "type": "number", "default": 0.02,
+                "description": "Desvio-padrao da WACC (default 2 p.p.).",
+            },
+            "n_iteracoes": {"type": "integer", "default": 10000},
+            "seed": {
+                "type": "integer", "default": 42,
+                "description": "Seed para reprodutibilidade (default 42).",
+            },
+        },
+        "required": ["capex_brl", "opex_anual_brl", "economia_anual_brl"],
+    },
+}
+
+
+# ===========================================================================
+# Tool 10: consultar_base_regulatoria (Sprint 4-B)
+# ===========================================================================
+
+DEF_CONSULTAR_BASE_REGULATORIA = {
+    "name": "consultar_base_regulatoria",
+    "description": (
+        "Consulta a base regulatoria indexada (REN ANEEL 1.000/2021, Lei "
+        "14.300/2022, NBR 13534, REH ANEEL 3.477/2025) via retrieval BM25. "
+        "USE SEMPRE antes de citar artigo especifico, valor de tarifa ou "
+        "regra normativa: o LLM nao deve inventar numeros de artigos ou "
+        "tarifas. Retorna ate 3 chunks relevantes com fonte e score. Se "
+        "nenhum chunk for retornado, informe ao usuario que a regra "
+        "consultada nao esta no corpus indexado."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "Pergunta ou termo em PT-BR. Ex: 'multa de ultrapassagem "
+                    "de demanda', 'hospital UTI autonomia minima', 'Lei "
+                    "14.300 transicao TUSD'."
+                ),
+            },
+            "top_k": {
+                "type": "integer", "default": 3,
+                "description": "Numero de chunks a retornar (1-5).",
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+
+def exec_consultar_base_regulatoria(args: dict) -> dict:
+    # Import tardio para nao quebrar caso rank_bm25/pypdf nao instalados
+    from rag import consultar_regulamento
+
+    top_k = max(1, min(5, args.get("top_k", 3)))
+    resultados = consultar_regulamento(
+        query=args["query"],
+        top_k=top_k,
+    )
+    if not resultados:
+        return {
+            "encontrados": 0,
+            "obs": (
+                "Nenhum chunk relevante encontrado na base regulatoria "
+                "indexada. Informe ao usuario que esta regra/artigo nao "
+                "esta disponivel no corpus atual."
+            ),
+            "chunks": [],
+        }
+    return {
+        "encontrados": len(resultados),
+        "chunks": [
+            {
+                "fonte": r.fonte,
+                "chunk_id": r.chunk_id,
+                "score": round(r.score, 2),
+                # Trunca para nao explodir contexto do LLM (max 1500 chars)
+                "texto": r.texto[:1500] + ("..." if len(r.texto) > 1500 else ""),
+            }
+            for r in resultados
+        ],
+    }
+
+
+def _classificar_risco(prob_viavel: float) -> str:
+    """Mapeia P(VPL>0) em rotulo verbal para o LLM."""
+    if prob_viavel >= 0.80:
+        return "BAIXO (projeto provavelmente viavel)"
+    if prob_viavel >= 0.50:
+        return "MEDIO (viabilidade incerta - depende de cotacao real)"
+    if prob_viavel >= 0.20:
+        return "ALTO (viabilidade improvavel sem revenue stacking)"
+    return "MUITO ALTO (projeto inviavel pelas premissas atuais)"
+
+
+def exec_monte_carlo_financeiro(args: dict) -> dict:
+    r = simulacao_monte_carlo(
+        capex_brl=args["capex_brl"],
+        opex_anual_brl=args["opex_anual_brl"],
+        economia_anual_brl=args["economia_anual_brl"],
+        horizonte_anos=args.get("horizonte_anos", 20),
+        wacc_central=args.get("wacc_central", 0.12),
+        wacc_desvio_padrao=args.get("wacc_desvio_padrao", 0.02),
+        n_iteracoes=args.get("n_iteracoes", 10_000),
+        seed=args.get("seed", 42),
+    )
+    p50 = r.vpl_brl_p50
+    p10 = r.vpl_brl_p10
+    p90 = r.vpl_brl_p90
+    spread_relativo = None
+    if p50 != 0:
+        spread_relativo = round((p90 - p10) / abs(p50), 2)
+
+    return {
+        "n_iteracoes": r.n_iteracoes,
+        "vpl_brl_p10": round(p10, 0),
+        "vpl_brl_p25": round(r.vpl_brl_p25, 0),
+        "vpl_brl_p50": round(p50, 0),
+        "vpl_brl_p75": round(r.vpl_brl_p75, 0),
+        "vpl_brl_p90": round(p90, 0),
+        "vpl_brl_media": round(r.vpl_brl_media, 0),
+        "vpl_brl_desvio_padrao": round(r.vpl_brl_desvio_padrao, 0),
+        "vpl_brl_min_observado": round(r.vpl_brl_min, 0),
+        "vpl_brl_max_observado": round(r.vpl_brl_max, 0),
+        "probabilidade_viavel_pct": round(r.probabilidade_viavel * 100, 1),
+        "spread_p10_p90_relativo": spread_relativo,
+        "classificacao_risco": _classificar_risco(r.probabilidade_viavel),
+        "premissas_distribuicoes": r.distribuicoes_usadas,
+        # NAO retorna histograma para o LLM (50+ valores) -- so a estatistica.
+        "histograma_n_bins": len(r.histograma_contagens),
+    }
+
+
+# ===========================================================================
 # Registry
 # ===========================================================================
 
@@ -468,6 +626,8 @@ TOOL_DEFINITIONS = [
     DEF_ANALISAR_FINANCEIRO,
     DEF_CALCULAR_SOH,
     DEF_MATCH_SKU_HUAWEI,
+    DEF_MONTE_CARLO_FINANCEIRO,
+    DEF_CONSULTAR_BASE_REGULATORIA,
 ]
 
 
@@ -480,6 +640,8 @@ TOOL_EXECUTORS = {
     "analisar_financeiro":       exec_analisar_financeiro,
     "calcular_soh":              exec_calcular_soh,
     "match_sku_huawei":          exec_match_sku_huawei,
+    "monte_carlo_financeiro":    exec_monte_carlo_financeiro,
+    "consultar_base_regulatoria": exec_consultar_base_regulatoria,
 }
 
 

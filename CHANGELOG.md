@@ -4,6 +4,80 @@ Todas as mudanças notáveis deste projeto serão documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.8.0] — 2026-04-25
+
+Sprint 4 Fases B + C — RAG da base regulatória + Monte Carlo financeiro. Agente passa a citar artigos com ancoragem em corpus indexado e oferece análise probabilística do VPL além do tornado ±20% determinístico.
+
+### Adicionado
+
+#### Sprint 4-C — Monte Carlo financeiro
+
+- `bess-core/bess_core/financeiro.py`:
+  - `ResultadoMonteCarlo` dataclass com P10/P25/P50/P75/P90 do VPL, média, desvio-padrão, mínimo/máximo, P(VPL > 0), histograma binned, distribuições usadas e seed.
+  - `simulacao_monte_carlo(...)` com 10.000 iterações default, distribuições triangulares para CAPEX/OPEX/Economia (assimétricas para refletir realidade — CAPEX raramente cai mais que 15%, mas estoura facilmente 20%) e normal truncada para WACC.
+  - Auxiliares `_triangular`, `_normal_truncada`, `_histograma_binned`, `_percentil` — todos puro Python, sem numpy.
+- `bess-core/bess_core/__init__.py` — versão bumpada para 1.1.0, exporta `ResultadoMonteCarlo` e `simulacao_monte_carlo`.
+- `bess-core/tests/test_monte_carlo.py` — 21 testes pytest cobrindo:
+  - Reprodutibilidade com seed
+  - Identidades estatísticas (P10 ≤ P25 ≤ P50 ≤ P75 ≤ P90, min/max envelopam percentis)
+  - Probabilidades em [0, 1]
+  - Monotonicidade econômica (CAPEX maior → menor viabilidade, etc.)
+  - Histograma com soma == n_iteracoes
+  - Validação de entrada
+  - Casos degenerados (variância zero, projeto super viável, projeto inviável)
+- `agent/tools.py` — nova tool `monte_carlo_financeiro` com helper `_classificar_risco()` que mapeia P(VPL>0) em rótulo verbal (BAIXO/MÉDIO/ALTO/MUITO ALTO).
+
+#### Sprint 4-B — RAG da base regulatória
+
+- `agent/regulamentos/` — pasta indexada com 4 arquivos `.md` curados:
+  - `REN_1000_2021.md` — modalidades tarifárias, ultrapassagem (Art. 60), faturamento mínimo, ressarcimento, GD.
+  - `LEI_14300_2022.md` — definições, SCEE, transição TUSD-fio B (2023-2029), modalidades de GD, limite de potência.
+  - `NBR_13534.md` — Grupos 0/1/2 de criticidade hospitalar, autonomia mínima por grupo, dimensionamento típico.
+  - `REH_3477_2025_ENEL_SP_A4_VERDE.md` — tarifas Enel SP A4 Verde verificadas no caso real, horário tarifário, implicações para BESS.
+  - `README.md` com instruções para adicionar novos regulamentos (.md curado ou .pdf full-text).
+- `agent/rag.py` — módulo de retrieval BM25:
+  - `_chunkar()` particiona texto em chunks de ~200 tokens (md) ou ~350 (pdf) com overlap de 30 tokens.
+  - `_tokenizar()` PT-BR via regex `[A-Za-z0-9À-ſ]+` + lowercase + remoção de acentos NFKD + filtragem de stopwords.
+  - `consultar_regulamento(query, top_k=3, score_minimo=0.5)` retorna chunks com fonte e score.
+  - Singleton `_INDICE_GLOBAL` evita reconstrução a cada query (~1s para 17 chunks atuais).
+  - CLI `python rag.py rebuild` força reindexação (útil quando user adiciona PDF).
+  - Demo embutido `python rag.py` roda 5 queries representativas.
+- `agent/tools.py` — tool `consultar_base_regulatoria` com truncamento de resposta a 1500 chars/chunk (não estoura contexto do LLM).
+- `agent/requirements.txt` — `rank_bm25>=0.2.2`, `pypdf>=4.0`.
+
+#### Prompt — v0.5.3 → v0.6.0
+
+- Nova seção "Ancoragem regulatória (RAG via consultar_base_regulatoria)" com **regra de ouro**: "voce NAO inventa numeros de artigos, valores tarifarios ou prazos legais. SEMPRE chame consultar_base_regulatoria ANTES de citar."
+- Nova seção "Análise probabilística (Monte Carlo)" com 3 cenários explícitos para uso da tool: VPL central próximo de zero, pedido explícito do cliente, projeto de alto valor (CAPEX > R$ 5M).
+- Fluxo padrão atualizado: `... → analisar_financeiro → [monte_carlo_financeiro se incerteza alta] → match_sku_huawei → proposta executiva final`.
+- Conformidade ampliada: NBR 13534 explicitamente listada além de NBR 16690/5410.
+
+### Decisões de design
+
+- **BM25 keyword over embeddings semânticos**: zero deps pesadas (sem torch/transformers), sem download de modelo (~100 MB), tempo de boot <1s. Para corpus pequeno e curado, BM25 é tão bom quanto embeddings em precisão. Upgrade para embeddings fica como Sprint 4-B v2 se necessário.
+- **Markdown curado em vez de PDFs full-text**: precisão semântica maior em corpus pequeno. PDFs oficiais ANEEL/Planalto são longos e ruidosos — geram chunks tangenciais que diluem BM25. Markdown curado tem só os artigos-chave, com tags de retrieval explícitas. PDFs continuam suportados (pypdf) caso usuário queira indexar full-text depois.
+- **Distribuições triangulares assimétricas**: CAPEX(0.85, 1.0, 1.20) reflete que cotação direta com Tier 1 raramente bate -15%, mas overrun de obra estoura +20% facilmente. Economia(0.70, 1.0, 1.15) — upside limitado (regulamentação pode mudar contra), downside maior (tarifa pode cair).
+- **Stopwords PT-BR mínimas inline**: lista de ~30 palavras de altíssima frequência. Sem deps externas (NLTK/spaCy). "art" e "artigo" estão na lista porque são frequentes demais em regulamentos e prejudicam o IDF.
+- **Truncamento de chunk a 1500 chars no output da tool**: chunks maiores estouram contexto do LLM em queries paralelas. Trade-off aceitável porque o agente recebe múltiplos chunks — se o primeiro não for suficiente, ele tem 2 mais.
+
+### Observações operacionais
+
+- Smoke test do RAG no sandbox: 17 chunks indexados de 4 arquivos .md curados em <1s. Queries representativas retornam top-3 corretamente:
+  - "hospital UTI" → NBR_13534 (score 4.62)
+  - "Lei 14300 transicao TUSD" → LEI_14300_2022 (score 4.82)
+  - "Enel SP A4 Verde" → REH_3477_2025 (score 3.99)
+- Smoke test do Monte Carlo no sandbox: bloqueado por sync degradado do mount Linux. Validação local pelo usuário pendente.
+- Stack precisa de `pip install -r requirements.txt` para puxar `rank_bm25` e `pypdf` antes de subir o uvicorn.
+
+### Limitações conhecidas (Sprint 4-B v2 / 4-C v2)
+
+- **RAG keyword-only**: não captura sinônimos automaticamente ("multa de demanda" vs "penalidade de ultrapassagem"). Upgrade para embeddings (sentence-transformers multilingue) está documentado em `agent/regulamentos/README.md` como evolução opcional.
+- **NBR 13534 paywall**: corpus contém apenas pontos públicos sobre Grupo 1 (UTI/centro cirúrgico) compilados de manuais Eletrobras PROCEL. Texto integral da norma exige licença ABNT.
+- **Atualizações tarifárias manuais**: REHs novas precisam ser adicionadas como .md curado quando ANEEL publicar reajuste. Automação de scraping fica para Sprint 5.
+- **Monte Carlo sem correlação entre variáveis**: CAPEX e OPEX são amostrados independentemente, mas na prática são correlacionados (cotação alta tende a vir com manutenção cara). Pode ser refinado com matriz de correlação em Sprint 4-C v2.
+
+[0.8.0]: # "Monte Carlo financeiro + RAG da base regulatoria"
+
 ## [0.7.0] — 2026-04-25
 
 Sprint 4 Fase A — Geração de PDF da proposta executiva. Cliente final pode baixar relatório técnico-comercial profissional via botão no sidebar.

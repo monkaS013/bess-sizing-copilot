@@ -18,11 +18,13 @@ from bess_core.dimensionamento import (
 )
 from bess_core.financeiro import (
     AnaliseFinanceira,
+    ResultadoMonteCarlo,
     SensibilidadeItem,
     analisar_financeiro,
+    simulacao_monte_carlo,
 )
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     # Sprint 1.1
@@ -42,4 +44,7 @@ __all__ = [
     # Sprint 1.4
     "ResultadoDegradacao",
     "calcular_soh_anual",
+    # Sprint 4-C
+    "ResultadoMonteCarlo",
+    "simulacao_monte_carlo",
 ]
