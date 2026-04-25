@@ -28,9 +28,11 @@ from typing import Any
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from agent_v1 import Agent, RespostaAgente
+from pdf_generator import gerar_proposta_pdf
 from storage import MensagemRegistro, Storage, get_storage
 
 
@@ -94,6 +96,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*", "X-User-Id"],
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -267,6 +270,58 @@ async def historico(session_id: str) -> HistoricoResponse:
         },
         criada_em=sessao.criado_em,
         atualizada_em=sessao.atualizado_em,
+    )
+
+
+@app.post("/api/sessions/{session_id}/relatorio-pdf")
+async def gerar_pdf_proposta(session_id: str) -> Response:
+    """
+    Gera PDF da proposta executiva da sessao.
+
+    Identifica a ultima resposta do agente (heuristica: maior msg do
+    assistant com markdown estruturado) e renderiza em PDF profissional
+    com header HDT Energy + BESS Sizing Copilot.
+
+    Retorna 404 se a sessao nao existe, 400 se nao ha proposta para gerar.
+    """
+    sessao = _STORAGE.obter_sessao(session_id)
+    if not sessao:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Sessao {session_id} nao encontrada.",
+        )
+
+    mensagens = _STORAGE.listar_mensagens(session_id)
+    if not mensagens:
+        raise HTTPException(
+            status_code=400,
+            detail="Sessao vazia - nao ha proposta para exportar.",
+        )
+
+    try:
+        pdf_bytes = gerar_proposta_pdf(
+            mensagens=mensagens,
+            session_id=session_id,
+            modelo=DEFAULT_MODEL,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao gerar PDF: {type(e).__name__}: {e}",
+        )
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"BESS_Proposta_{timestamp}_{session_id[:8]}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Filename": filename,
+        },
     )
 
 

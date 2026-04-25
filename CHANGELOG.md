@@ -4,6 +4,62 @@ Todas as mudanças notáveis deste projeto serão documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.7.0] — 2026-04-25
+
+Sprint 4 Fase A — Geração de PDF da proposta executiva. Cliente final pode baixar relatório técnico-comercial profissional via botão no sidebar.
+
+### Adicionado
+
+#### Backend Python
+
+- `agent/pdf_generator.py` — módulo de geração de PDF baseado em `reportlab` (Platypus) + `markdown-it-py`:
+  - `gerar_proposta_pdf(mensagens, session_id, modelo)` recebe a lista de mensagens da sessão, identifica heuristicamente a última proposta executiva do agente (preferência: ≥400 chars com headings/tabelas) e renderiza para PDF.
+  - Layout corporativo HDT Energy + BESS Sizing Copilot: header com faixa azul-marinho (#0B2545), accent laranja (#E76F00), footer paginado com session_id + timestamp + modelo.
+  - Parser markdown → Platypus suporta H1-H3, parágrafos, listas (bulleted/numbered), tabelas GFM com header destacado, inline (bold/italic/code/link).
+  - Página final automática com "Sobre esta proposta" (premissas e ressalvas regulatórias gerais).
+  - Smoke test embedded: `python pdf_generator.py` gera `_smoketest_proposta.pdf` (validado: 5,2 KB / 2 páginas).
+- `agent/api_server.py` — novo endpoint `POST /api/sessions/{session_id}/relatorio-pdf`:
+  - Busca sessão e mensagens via `Storage`, chama `gerar_proposta_pdf`, retorna PDF binary.
+  - Filename gerado: `BESS_Proposta_<YYYYMMDD_HHMM>_<id8>.pdf` no header `Content-Disposition` e `X-Filename`.
+  - 404 se sessão não existe, 400 se vazia ou sem proposta detectável, 500 em falha de geração.
+  - CORS atualizado com `expose_headers=["Content-Disposition"]` para o frontend ler o filename.
+- `agent/requirements.txt` — novas dependências: `reportlab>=4.0`, `markdown-it-py>=3.0`.
+
+#### Frontend Next.js
+
+- `frontend/src/app/api/sessions/[id]/relatorio-pdf/route.ts` — proxy server-side que retransmite o PDF binário do FastAPI mantendo `Content-Disposition` e `X-Filename`. Trata erros JSON do backend e retorna mensagem útil.
+- `frontend/src/components/Sidebar.tsx` — novo botão **"Baixar PDF da proposta"**:
+  - Habilitado quando há ao menos 1 resposta do agente na sessão (`hasMessages`).
+  - Estados: `idle` (botão azul ativo), `loading` (spinner + texto "Gerando..."), `error` (mensagem inline em vermelho com auto-clear após 5s).
+  - Cria URL.createObjectURL do blob, cria `<a download>` e dispara click — trigger nativo do browser.
+- `frontend/src/app/page.tsx` — passa `hasMessages` para o `Sidebar`.
+
+#### Configuração
+
+- `.gitignore` — exclui `agent/_smoketest_*.pdf`, `agent/relatorios/`, `frontend/.next/`, `frontend/node_modules/`, `frontend/out/`.
+
+### Decisões de design
+
+- **Backend gera PDF, não frontend**: reportlab tem layout determinístico, fontes embutidas e renderização consistente cross-platform. jsPDF/react-pdf no browser teriam variações de fonte por OS.
+- **Markdown da proposta como input, não JSON estruturado**: o agente já produz markdown estruturado por design do prompt v0.5.2. Reaproveitar isso evita uma rodada extra de tool call (importante dado os limites de rate limit no Tier Free Anthropic).
+- **Proposta final apenas, não session transcript**: PDF é entregável para cliente — limpo, executivo. Histórico fica disponível via `/api/sessions/{id}/historico` se precisar de auditoria.
+- **Heurística para identificar proposta**: preferência por última mensagem do assistant com ≥400 caracteres E (headings markdown OU tabelas). Fallback para última resposta independente de tamanho. Robusto a respostas curtas vs longas.
+- **`reportlab` em vez de `weasyprint`**: reportlab é Python puro (sem deps de sistema), enquanto weasyprint requer `pango`/`cairo` que pesa em deploy. Trade-off: weasyprint é mais "HTML-CSS-like", mas reportlab dá controle pixel-perfect via Platypus.
+
+### Observações operacionais
+
+- Smoke test do backend OK: PDF de 2 páginas gerado com sucesso a partir de markdown sample (proposta industrial peak shaving).
+- Para testar end-to-end: reiniciar uvicorn (após `pip install -r requirements.txt` para puxar `reportlab` + `markdown-it-py`), recarregar frontend, rodar uma conversa até proposta final, clicar **"Baixar PDF da proposta"** no sidebar.
+
+### Limitações conhecidas (próximas iterações Sprint 4)
+
+- **Sem suporte a imagens no markdown** — agente não gera imagens hoje, então não é gap real.
+- **Sem logos vetoriais** — branding atual é texto-only. Adicionar PNG/SVG da HDT requer pequena mudança em `_desenhar_header_footer`.
+- **Sem template alternativo "transcript completo"** — apenas modo "proposta executiva". Pode ser adicionado em v0.7.1 se necessário.
+- **Geração síncrona** — para sessões muito grandes pode haver latência perceptível. Streaming/async fica pra próximas iterações.
+
+[0.7.0]: # "PDF export da proposta executiva"
+
 ## [0.6.1] — 2026-04-25
 
 Validação contra caso real (Enel SP A4 Verde, REH ANEEL 3.477/2025) e correção do prompt para eliminar double-counting na decomposição de economia em peak shaving.

@@ -16,4 +16,11 @@ pydantic>=2.5
 # postgrest cobre tudo que precisamos para CRUD em tabelas Postgres.
 postgrest>=0.16
 
+# Sprint 4 Fase A - Geracao de PDF da proposta executiva
+# reportlab: motor de PDF (Platypus para layout estruturado).
+# markdown-it-py: parser Markdown -> AST (rapido e confiavel, mesmo motor do
+# react-markdown no front).
+reportlab>=4.0
+markdown-it-py>=3.0
+
 # bess-core eh importado por path relativo (sem instalar como pacote por enquanto).

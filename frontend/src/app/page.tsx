@@ -169,6 +169,7 @@ export default function Home() {
         sessionId={sessionId}
         tokensInput={tokensInput}
         tokensOutput={tokensOutput}
+        hasMessages={messages.some((m) => m.role === "assistant")}
         onReset={handleReset}
       />
 

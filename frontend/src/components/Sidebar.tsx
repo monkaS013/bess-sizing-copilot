@@ -1,6 +1,7 @@
 "use client";
 
-import { Battery, RefreshCw, AlertCircle } from "lucide-react";
+import { useState } from "react";
+import { Battery, RefreshCw, AlertCircle, FileDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { HealthResponse } from "@/lib/types";
 
@@ -10,6 +11,7 @@ type SidebarProps = {
   sessionId: string | null;
   tokensInput: number;
   tokensOutput: number;
+  hasMessages: boolean;
   onReset: () => void;
 };
 
@@ -19,8 +21,62 @@ export function Sidebar({
   sessionId,
   tokensInput,
   tokensOutput,
+  hasMessages,
   onReset,
 }: SidebarProps) {
+  const [pdfStatus, setPdfStatus] = useState<"idle" | "loading" | "error">(
+    "idle"
+  );
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
+  async function baixarPDF() {
+    if (!sessionId) return;
+    setPdfStatus("loading");
+    setPdfError(null);
+
+    try {
+      const res = await fetch(
+        `/api/sessions/${sessionId}/relatorio-pdf`,
+        { method: "POST" }
+      );
+
+      if (!res.ok) {
+        let msg = `Falha HTTP ${res.status}`;
+        try {
+          const data = (await res.json()) as { error?: string };
+          if (data.error) msg = data.error;
+        } catch {
+          // resposta nao era JSON
+        }
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const filename =
+        res.headers.get("X-Filename") ?? `BESS_Proposta_${sessionId.slice(0, 8)}.pdf`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setPdfStatus("idle");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPdfError(msg);
+      setPdfStatus("error");
+      // limpa erro depois de 5s
+      setTimeout(() => {
+        setPdfStatus("idle");
+        setPdfError(null);
+      }, 5000);
+    }
+  }
+
+  const podeBaixar = !!sessionId && hasMessages && pdfStatus !== "loading";
   return (
     <aside className="w-72 shrink-0 border-r border-border bg-muted/30 flex flex-col">
       {/* Logo + nome */}
@@ -82,7 +138,46 @@ export function Sidebar({
       </div>
 
       {/* Acoes */}
-      <div className="px-4 py-4 flex-1 flex flex-col">
+      <div className="px-4 py-4 flex-1 flex flex-col gap-2">
+        <button
+          onClick={baixarPDF}
+          disabled={!podeBaixar}
+          title={
+            !sessionId
+              ? "Sem sessao ativa"
+              : !hasMessages
+              ? "Aguardando primeira resposta do agente"
+              : "Baixar PDF da proposta executiva"
+          }
+          className={cn(
+            "flex items-center justify-center gap-2",
+            "w-full px-3 py-2 rounded-md",
+            "text-sm font-medium",
+            "bg-primary text-primary-foreground",
+            "hover:bg-primary/90 transition-colors",
+            "disabled:opacity-50 disabled:cursor-not-allowed"
+          )}
+        >
+          {pdfStatus === "loading" ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Gerando...
+            </>
+          ) : (
+            <>
+              <FileDown className="h-4 w-4" />
+              Baixar PDF da proposta
+            </>
+          )}
+        </button>
+
+        {pdfStatus === "error" && pdfError && (
+          <div className="flex items-start gap-1.5 text-xs text-destructive bg-destructive/5 px-2 py-1.5 rounded">
+            <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span className="break-words">{pdfError}</span>
+          </div>
+        )}
+
         <button
           onClick={onReset}
           className={cn(

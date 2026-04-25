@@ -37,3 +37,12 @@ build/
 
 # Notebooks
 .ipynb_checkpoints/
+
+# Sprint 4 - PDFs gerados em smoke tests (nao commitar)
+agent/_smoketest_*.pdf
+agent/relatorios/
+
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/out/
