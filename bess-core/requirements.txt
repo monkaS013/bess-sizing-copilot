@@ -1,0 +1,9 @@
+# Núcleo de cálculo (Sprint 1)
+# Dependências mínimas — nada de LLM, nada de web, nada de banco.
+
+numpy>=1.26
+pandas>=2.2
+
+# Testes
+pytest>=8.0
+pytest-cov>=4.1

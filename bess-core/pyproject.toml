@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bess-core"
+version = "0.1.0"
+description = "Núcleo de cálculo determinístico para dimensionamento de BESS no mercado brasileiro."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Vinicius Morais", email = "vinicius.morais@hdt.energy" },
+]
+license = { text = "Proprietary" }
+keywords = ["bess", "energy-storage", "peak-shaving", "renewables", "brazil"]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[tool.setuptools.packages.find]
+include = ["bess_core*"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short --strict-markers"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
