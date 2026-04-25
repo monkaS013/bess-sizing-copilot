@@ -2,6 +2,7 @@
 
 import { User, Bot } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 import type { Message } from "@/lib/types";
 import { ToolCallExpander } from "./ToolCallExpander";
@@ -50,7 +51,7 @@ export function ChatMessage({ message }: { message: Message }) {
             <p className="text-sm whitespace-pre-wrap">{message.content}</p>
           ) : (
             <div className="prose-bess">
-              <ReactMarkdown>{message.content}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
             </div>
           )}
         </div>

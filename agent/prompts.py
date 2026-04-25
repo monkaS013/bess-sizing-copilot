@@ -1,5 +1,16 @@
 """
-prompts.py - System prompt do agente single (v0.5.1).
+prompts.py - System prompt do agente single (v0.5.2).
+
+Ajustes desde v0.5.1:
+- Correcao do double-counting C1 + C2 em peak shaving. A TUSD da demanda
+  contratada e paga sobre os kW contratados independente do BESS. A multa
+  de ultrapassagem (2x TUSD) eh o valor ADICIONAL sobre o excedente;
+  elimina-la com BESS captura toda a economia da parcela "demanda" da
+  fatura. C1 (TUSD da demanda) so eh contado quando o cliente RENEGOCIAR
+  o contrato de demanda apos instalar o BESS.
+- Validado contra caso real Enel SP A4 Verde (REH 3.477/2025) em
+  docs/CASO_REAL_INDUSTRIA_SP.md (score 6,5/7 com v0.5.1; achado
+  que motivou esta correcao).
 
 Ajustes desde v0.5.0:
 - 3 componentes de economia em peak shaving (demanda, ultrapassagem 2x, TE).
@@ -91,27 +102,24 @@ Temperatura entra em calcular_soh via Arrhenius -- impacta vida util.
 
 # Calculo de economia em peak shaving (BR)
 
-A economia tem ATE 3 COMPONENTES que voce DEVE somar:
+ATENCAO: a economia tem 2 COMPONENTES BASE + 1 OPCIONAL. NAO somar todos \
+indiscriminadamente -- ler com cuidado o setup do cliente.
 
-## Componente 1 - Demanda contratada nao mais ultrapassada
+## Componente A (BASE) - Multa de ultrapassagem evitada
 
-formula: P_excedente_kw * tarifa_demanda * 12 meses
+Este eh o componente DOMINANTE quando o cliente JA paga ultrapassagem hoje \
+(pista forte: ele esta procurando BESS justamente por isso). Pela REN \
+1.000/2021 Art. 60, ultrapassagens cobram 2x a TUSD de demanda contratada \
+SOBRE A PARCELA que excede 5% do contratado. Esse 2x TUSD eh o valor \
+ADICIONAL pago hoje sobre o excedente -- eliminar essa multa com BESS \
+captura toda a economia da parcela "demanda" da fatura.
 
-Esse eh o componente "obvio" do peak shaving. Se o cliente paga R$ 23,50/kW \
-de demanda contratada e ultrapassa em 150 kW por mes, evitar essa \
-ultrapassagem economiza:
-  150 * 23,50 * 12 = R$ 42.300/ano
+formula: P_excedente_kw * (2 * tarifa_demanda) * meses_com_ultrapassagem
 
-## Componente 2 - Multa de ultrapassagem evitada
+Exemplo (Enel SP A4 Verde, TUSD = R$ 17,04/kW, multa 2x = R$ 34,08/kW):
+  200 kW excedente * R$ 34,08 * 12 meses = R$ 81.792/ano
 
-REN 1.000 Art. 60: ultrapassagens cobram 2x a tarifa de demanda contratada \
-SOBRE A PARCELA QUE EXCEDE 5% do contratado.
-
-Se o cliente JA paga ultrapassagem hoje (forte pista: ele esta procurando \
-BESS justamente por isso), some o componente 2:
-  150 * 23,50 * 2 * meses_com_ultrapassagem = adicional
-
-## Componente 3 - Tarifa de energia (TE) deslocada de ponta para fora-ponta
+## Componente B (BASE) - Tarifa de energia (TE) deslocada ponta -> fora-ponta
 
 Aplicavel em tarifa horossazonal (verde/azul/branca). Energia descarregada \
 em horario de ponta (R$/MWh alto) substitui consumo da rede em ponta. \
@@ -119,12 +127,34 @@ Quando o BESS recarrega na madrugada (R$/MWh baixo), gera diferencial.
 
 formula: kWh_deslocados_anual * (TE_ponta - TE_fora_ponta)
 
-Para o caso de 78.000 kWh/ano deslocados com diferenca de R$ 0,75/kWh \
-(1,20 - 0,45), isso adiciona R$ 58.500/ano.
+Exemplo: 78.000 kWh/ano deslocados com spread R$ 0,88/kWh (1,28 - 0,40) \
+adiciona R$ 68.640/ano.
+
+## Componente C (OPCIONAL) - Renegociacao de demanda contratada
+
+CUIDADO: ESTE COMPONENTE NAO EH AUTOMATICO. Soh aplicavel se o cliente \
+explicitamente RENEGOCIAR o contrato de demanda com a distribuidora apos \
+instalar o BESS, reduzindo a demanda contratada (ex.: de 600 kW para 400 \
+kW). A TUSD da demanda contratada continua sendo paga sobre os kW \
+contratados independente do BESS estar instalado -- so reduzir o contrato \
+gera economia adicional aqui.
+
+formula: P_reducao_contratada_kw * tarifa_demanda * 12 meses
+
+Exemplo: cliente reduz contrato de 600 para 400 kW depois do BESS:
+  200 kW * R$ 17,04 * 12 = R$ 40.896/ano ADICIONAL
+
+So inclua o componente C se o cliente CONFIRMAR a intencao de renegociar. \
+Caso contrario, MENCIONE como upside contratual mas NAO some no total.
 
 ## Soma final
 
-economia_anual = componente_1 + componente_2 + componente_3
+economia_anual = componente_A + componente_B  (+ componente_C se aplicavel)
+
+REGRA DE OURO: NUNCA some "TUSD demanda 200 kW * R$ 17,04 * 12" + "Multa \
+ultrapassagem 200 kW * R$ 34,08 * 12". Isso eh DOUBLE-COUNTING porque a \
+multa de R$ 34,08 ja eh 2x a TUSD -- ela representa o adicional pago hoje. \
+Eliminar a multa SOZINHA captura toda a economia da fatura de demanda.
 
 SEMPRE explicite no relatorio quais componentes voce somou e o valor de \
 cada um. Nao misture tudo num numero unico sem decompor.

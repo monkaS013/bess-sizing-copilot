@@ -4,6 +4,34 @@ Todas as mudanças notáveis deste projeto serão documentadas aqui.
 
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/) e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [0.6.1] — 2026-04-25
+
+Validação contra caso real (Enel SP A4 Verde, REH ANEEL 3.477/2025) e correção do prompt para eliminar double-counting na decomposição de economia em peak shaving.
+
+### Corrigido
+
+- `agent/prompts.py` v0.5.2 — refatorado o bloco "Calculo de economia em peak shaving (BR)":
+  - **Componente A (BASE)**: multa de ultrapassagem evitada — `2 × TUSD × kW excedente × meses`. Captura toda a economia da fatura de demanda quando o cliente já paga ultrapassagem.
+  - **Componente B (BASE)**: spread ponta − fora-ponta na TE deslocada.
+  - **Componente C (OPCIONAL)**: TUSD da demanda contratada — *só aplicável* se o cliente RENEGOCIAR o contrato (ex.: reduzir de 600 para 400 kW após instalar BESS). Não é fluxo automático.
+  - Regra de ouro explicitada: nunca somar `TUSD × kW × 12` com `2× TUSD × kW × 12` — a multa já contém a TUSD multiplicada por 2 e representa o **adicional** pago hoje sobre o excedente.
+
+### Adicionado
+
+- `docs/CASO_REAL_INDUSTRIA_SP.md` — seção "Resultado da execução real (2026-04-25)" com:
+  - Comparação do output do agente vs benchmark manual em 14 indicadores.
+  - Score 6,5/7 (agente passa com folga; mínimo era 5/7).
+  - Bônus entregues além do benchmark (BNDES Finem, qualificação ACL, caveat de perfil sintético).
+  - Achados que motivaram correção em v0.5.2 (double-counting C1+C2 e premissa de descarga semanal).
+- Benchmark recalculado no doc: economia esperada de **~R$ 150 k/ano** (apenas Componentes A + B), payback ~15 anos, VPL claramente negativo, veredicto inviável só com peak shaving.
+
+### Observações operacionais
+
+- Caso rodado no stack completo (frontend Next.js + backend FastAPI + InMemoryStorage), modelo `claude-sonnet-4-6`, prompts v0.5.1.
+- Próximo passo: reexecutar este caso após v0.5.2 estar ativo para confirmar que economia cai para ~R$ 150 k/ano e veredicto continua inviável.
+
+[0.6.1]: # "validacao real Enel SP + fix double-counting prompt"
+
 ## [0.6.0] — 2026-04-25
 
 Sprint 3 — produto completo end-to-end. Single agent com tool-use, backend FastAPI, frontend Next.js e persistência Supabase opcional.
